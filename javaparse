@@ -1,0 +1,175 @@
+#!/usr/bin/perl
+
+use strict;
+use Parse::RecDescent;
+use Data::Dumper;
+
+# Wipes out comments and contents of strings,
+# which could get confusing...
+sub kill_comments {
+  local($_) = shift;
+  my $out = '';
+  while (s{^(.*?)("|/\*|//)}{}s) {
+    my $out .= $1;
+    my $c = '';
+    if ($2 eq '"') {
+      s/^((?:[^"\\]*+(?:\\.)*+)*+")//;
+      $out .= ('"' + (' 'x(length($1)-1)) + '"');
+    } elsif ($2 eq '/*') {
+      s{^(.*?\*/)}{}s;
+      $c = "/*$1";
+    } elsif ($2 eq '//') {
+      s/^([^\n]*)//;
+      $c = "//$1";
+    }
+    $c =~ s/[^\n]/ /;
+    $out .= $c;
+  }
+  $out .= $_;
+  return $out;
+}
+
+sub name {
+  my @x = ();
+  foreach my $x (@{$_[0]->{'word(s)'}}) {
+    push @x, $x->{'__VALUE__'};
+  }  
+  push @x, $_[0]->{'word'}->{'__VALUE__'};
+  local($") = '.';
+  return "@x";
+}
+
+# Find all the known imports
+#my %imports = ();
+#open IMPORTS, "findimport '' |";
+#while ($_ = <IMPORTS>) {
+#  /.*\.([^.;]*);/ or die "Could not parse import line: $_";
+#  next if $imports{$1}; # only take the first hit for duplicates
+#  $imports{$1} = $_;
+#}
+
+# Slurp the file
+$/ = undef;
+$_ = <>;
+
+#$::RD_TRACE = 0;
+#$::RD_HINT = 1; $::RD_WARN = 1;
+
+# First kill the comments (replace with spaces)
+#$_ = kill_comments($_);
+
+$Parse::RecDescent::skip = qr{ (?: \s+ | /\* (?: (?! \*/ ) . )*+ \*/ | // [^\n]*+\n )* }xs;
+my $grammar = q{
+  <autotree>
+
+  file: package_decl(?) import_decl(s?) decl(s?)
+
+  package_decl: package fully_qualified_name ';'
+  import_decl: import static(?) fully_qualified_name ';'
+
+  fully_qualified_name: word(s /\./)
+  word: /[a-zA-Z_][a-zA-Z0-9_]*+/
+
+  decl: class_decl | enum_decl
+
+  class_or_interface: class | interface
+  modifier: abstract | final | public | private | protected | static
+  type: fully_qualified_name generic_instance(?) | wildcard type_bound(s?)
+  type_bound: extends type | super type
+
+  extends_clause: extends type
+  implements_clause: implements type(s /,/)
+  generic_instance: '<' type(s /,/) '>'
+  generic_decl: '<' type_variable(s /,/) '>'
+  type_variable: word extends type
+  class_decl: annotation(s?) modifier(s?)
+              class_or_interface word generic_decl(?)
+              extends_clause(?) implements_clause(?)
+              '{' class_body '}'
+  enum_decl: annotation(s?) modifier(s?)
+             enum word generic_decl(?)
+             implements_clause(?)
+             '{' enum_instance(s) ';' class_body '}'
+  enum_instance: word enum_instance_parameter_list(?) enum_instance_body(?)
+  enum_instance_parameter_list: '(' expression(s /,/) ')'
+  enum_instance_body: '{' class_body '}'
+  class_body: class_body_item(s?)
+  class_body_item: static_block | decl | constructor | field | method
+  static_block: static '{' statement(s) '}'
+  constructor: annotation(s?) modifier(s?)
+               word '(' parameter_list ')'
+               throws_clause(?) '{' statement(s?) '}'
+  field: annotation(s?) modifier(s?) type word field_assignment(?) ';'
+  field_assignment: '=' expression
+  throws_clause: throws type(s /,/)
+  parameter: annotation(s?) modifier(s?) type word
+  parameter_list: parameter(s? /,/)
+  method: annotation(s?) modifier(s?)
+          type word '(' parameter_list ')' throws_clause(?) method_body
+  method_body: '{' statement(s?) '}' | ';'
+
+  annotation_decl: annotation(s?) modifier(s?)
+                   '@' interface word implements_clause(?)
+                   '{' annotation_body '}'
+  annotation_body: annotation_body_item(s?)
+  annotation_body_item: static_block | decl | field | annotation_method
+  annotation_method: annotation(s?) modifier(s?)
+                     type word '(' ')' annotation_default_value(?) ';'
+  annotation_default_value: default expression
+
+  annotation: '@' fully_qualified_name annotation_param_list(?)
+  annotation_param_list: '(' annotation_param(s /,/) ')'
+  annotation_param: expression | word '=' expression
+
+
+
+  expression: term(s /\+
+            | 
+
+
+
+  statement: "stmt;"
+
+  abstract: "abstract"
+  class: "class"
+  default: "default"
+  enum: "enum"
+  extends: "extends"
+  final: "final"
+  implements: "implements"
+  import: "import"
+  interface: "interface"
+  package: "package"
+  public: "public"
+  private: "private"
+  protected: "protected"
+  static: "static"
+  super: "super"
+  throws: "throws"
+  wildcard: '?'
+};
+
+my $parser = new Parse::RecDescent($grammar) or die "Bad grammar!\n";
+
+print STDERR "\nFOOOOOO\n\n";
+
+#print Dumper($parser);
+
+#my $tree = $parser->parameter_list("Provider<? extends DataSource> dataSource, Foo bar");
+
+#my $tree = $parser->class_decl("class EvaluatorImpl { }");
+my $tree = $parser->file(\$_);
+#my $tree = $parser->class_decl("{ void foo() {} }");
+
+$tree or print "Bad text!\n";
+
+
+#print Dumper($tree->{'import(s?)'}->[0]->{'fully_qualified_name'});
+#print name($tree->{'import(s?)'}->[0]->{'fully_qualified_name'});
+
+print Dumper($tree);
+
+print "UNPARSED: $_\n";
+
+my @words = sort keys %::words;
+print "@words\n";

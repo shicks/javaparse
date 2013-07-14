@@ -1,0 +1,88 @@
+#!/usr/bin/perl
+
+use strict;
+use Parse::RecDescent;
+use Data::Dumper;
+
+# Wipes out comments and contents of strings,
+# which could get confusing...
+sub kill_comments {
+  local($_) = shift;
+  my $out = '';
+  while (s{^(.*?)("|/\*|//)}{}s) {
+    my $out .= $1;
+    my $c = '';
+    if ($2 eq '"') {
+      s/^((?:[^"\\]*+(?:\\.)*+)*+")//;
+      $out .= ('"' + (' 'x(length($1)-1)) + '"');
+    } elsif ($2 eq '/*') {
+      s{^(.*?\*/)}{}s;
+      $c = "/*$1";
+    } elsif ($2 eq '//') {
+      s/^([^\n]*)//;
+      $c = "//$1";
+    }
+    $c =~ s/[^\n]/ /;
+    $out .= $c;
+  }
+  $out .= $_;
+  return $out;
+}
+
+sub name {
+  my @x = ();
+  foreach my $x (@{$_[0]->{'word(s)'}}) {
+    push @x, $x->{'__VALUE__'};
+  }  
+  push @x, $_[0]->{'word'}->{'__VALUE__'};
+  local($") = '.';
+  return "@x";
+}
+
+# Find all the known imports
+#my %imports = ();
+#open IMPORTS, "findimport '' |";
+#while ($_ = <IMPORTS>) {
+#  /.*\.([^.;]*);/ or die "Could not parse import line: $_";
+#  next if $imports{$1}; # only take the first hit for duplicates
+#  $imports{$1} = $_;
+#}
+
+# Slurp the file
+$/ = undef;
+$_ = <>;
+
+$::RD_TRACE = 0; $::RD_HINT = 1; $::RD_WARN = 1;
+
+# First kill the comments (replace with spaces)
+#$_ = kill_comments($_);
+
+$Parse::RecDescent::skip = qr{ (?: \s+ | /\* (?: (?! \*/ ) . )*+ \*/ | // [^\n]*+\n )* }xs;
+open GRAMMAR, "grammar";
+my $grammar = <GRAMMAR>;
+close GRAMMAR;
+
+my $parser = new Parse::RecDescent($grammar) or die "Bad grammar!\n";
+
+print STDERR "\nFOOOOOO\n\n";
+
+#print Dumper($parser);
+
+#my $tree = $parser->parameter_list("Provider<? extends DataSource> dataSource, Foo bar");
+
+#my $tree = $parser->class_decl("class EvaluatorImpl { }");
+my $tree = $parser->compilation_unit(\$_);
+#my $tree = $parser->class_decl("{ void foo() {} }");
+
+$tree or print "Bad text!\n";
+
+
+#print Dumper($tree->{'import(s?)'}->[0]->{'fully_qualified_name'});
+#print name($tree->{'import(s?)'}->[0]->{'fully_qualified_name'});
+
+print Dumper($tree);
+
+print "UNPARSED: $_\n";
+
+my @words = sort keys %::words;
+print "@words\n";

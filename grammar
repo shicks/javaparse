@@ -1,0 +1,337 @@
+# COMPILATION UNIT
+
+compilation_unit: package_decl(?) import_decl(s?) type_decl(s?)
+package_decl: annotation(s?) package qualified_identifier ';'
+import_decl: import static(?) qualified_identifier import_wildcard(?) ';'
+import_wildcard: '.' '*'
+
+# IDENTIFIERS
+
+identifier: ...!keyword /[a-zA-Z_$][a-zA-Z0-9_$]*+/
+qualified_identifier: identifier(s /\./)
+qualified_identifier_list: qualified_identifier(s /,/)
+
+# TYPE DECLARATIONS
+
+type_decl: class_decl | interface_decl | enum_decl | annotation_decl | ';'
+class_decl: modifier(s?) class identifier type_parameters(?)
+            extends_clause(?) implements_clause(?)
+            class_body
+extends_clause: extends type
+implements_clause: implements type_list
+
+enum_decl: modifier(s?) enum identifier implements_clause(?) enum_body
+
+interface_decl: modifier(s?)
+                interface identifier type_parameters(?)
+                interface_extends_clause(?) interface_body
+interface_extends_clause: extends type_list
+
+annotation_decl: modifier(s?)
+                 '@' interface identifier annotation_body
+
+# TYPE REFS
+
+type: basic_type array_suffix(s?) | reference_type array_suffix(s?)
+basic_type: byte | short | char | int | long | float | double | boolean
+type_or_void: type | void
+reference_type_component: identifier type_arguments(?)
+reference_type: reference_type_component(s /\./)
+array_suffix: '[' ']'
+
+# GENERIC INSTANCES
+
+type_arguments: '<' type_argument(s /,/) '>'
+type_argument: reference_type
+             | '?' wildcard_type_bound(?)
+wildcard_type_bound: extends reference_type | super reference_type
+non_wildcard_type_arguments: '<' type_list '>'
+type_list: reference_type(s /,/)
+type_arguments_or_diamond: '<' '>' | type_arguments
+non_wildcard_type_arguments_or_diamond: '<' '>' | non_wildcard_type_arguments
+
+# GENERIC DECLS
+
+type_parameters: '<' type_parameter(s /,/) '>'
+type_parameter: identifier type_parameter_bound(?)
+type_parameter_bound: extends bound
+bound: reference_type(s /&/)
+
+# MODIFIERS
+
+modifier: annotation | public | protected | private | static | abstract | final
+        | native | synchronized | transient | volatile | strictfp
+annotation: '@' qualified_identifier annotation_parameters(?)
+annotation_parameters: '(' annotation_element(?) ')'
+annotation_element: element_value_pair(s /,/) | element_value
+element_value_pair: identifier '=' element_value
+element_value: annotation | expression1 | element_value_array_initializer
+element_value_array_initializer: element_value(s /,/) comma(?)
+
+# CLASSES
+
+class_body: '{' class_body_decl(s?) '}'
+class_body_decl: ';' | static(?) block
+               | field_decl | method_decl | constructor_decl | type_decl
+
+field_decl: modifier(s?) type variable_decl(s /,/) ';'
+method_decl: modifier(s?) type_parameters(?)
+             type_or_void identifier formal_parameters array_suffix(s?)
+             throws_clause(?) block_or_semi
+throws_clause: throws qualified_identifier_list
+semi: ';'
+comma: ','
+block_or_semi: block | ';'
+
+constructor_decl: modifier(s?) type_parameters(?)
+                  identifier formal_parameters throws_clause(?) block
+
+# INTERFACES
+
+interface_body: '{' interface_body_decl(s?) '}'
+interface_body_decl: ';' | interface_field_decl | interface_method_decl | type_decl
+
+interface_field_decl: modifier(s?) type constant_decl(s /,/) ';'
+interface_method_decl: modifier(s?) type_parameters(?)
+                       type_or_void identifier formal_parameters array_suffix(s?)
+                       throws_clause(?) ';'
+
+constant_decl: identifier array_suffix(s?) '=' variable_initializer
+
+# ENUMS
+
+enum_body: enum_constant_or_body_decl(s?)
+enum_constant_or_body_decl: enum_constant(s? /,/) comma(?) enum_body_decls
+enum_constant: annotation(s?) identifier arguments(?) class_body(?)
+enum_body_decls: ';' class_body_decl(s?)
+
+# ANNOTATIONS
+
+annotation_body: '{' annotation_element_decl(s?) '}'
+
+annotation_element_decl: interface_field_decl | annotation_method_decl | type_decl
+annotation_method_decl: modifier(s?) type identifier '(' ')' array_suffix(?)
+                        annotation_default_value(?)
+annotation_default_value: default element_value
+
+# PARAMETERS AND VARIABLES
+
+formal_parameters: '(' formal_parameter_decls(?) ')'
+formal_parameter_decls: formal_parameter_decl(s /,/)
+                      | varargs_parameter_decl
+                      | formal_parameter_decl(s /,/) ',' varargs_parameter_decl
+formal_parameter_decl: variable_modifier(s?) type variable_decl_id 
+varargs_parameter_decl: 
+variable_modifier: final | annotation
+variable_decl_id: identifier array_suffix(s?)
+variable_decl: identifier array_suffix(s?) variable_decl_assignment(?)
+variable_decl_assignment: '=' variable_initializer
+variable_initializer: array_initializer | expression
+array_initializer: '{' variable_initializer(s /,/) comma(?) '}'
+
+# BLOCKS
+
+block: '{' block_statement(s?) '}'
+block_statement: local_variable_declaration_statement
+               | type_decl
+               | label(?) statement
+label: identifier ':'
+
+local_variable_declaration_statement:
+    variable_modifier(s?) type variable_decl(s /,/) ';'
+
+statement: block | ';' | label statement
+         | expression ';'
+         | if '(' expression ')' statement else_clause(?)
+         | assert expression assert_message_clause(?) ';'
+         | switch '(' expression ')' switch_block_statement_group(s?)
+         | while '(' expression ')' statement
+         | do statement while '(' expression ')' ';'
+         | for '(' for_control ')' statement
+         | break identifier(?) ';'
+         | continue identifier(?) ';'
+         | return expression(?) ';'
+         | throw expression ';'
+         | synchronized '(' expression ')' block
+         | try block catch_or_finally
+         | try resource_specification block catch_clause(s?) finally_clause(?)
+
+else_clause: else statement
+assert_message_clause: ':' expression
+
+# TRY-CATCH-FINALLY
+
+catch_or_finally: catch_clause(s) | catch_clause(s?) finally_clause
+catch_clause: catch '(' variable_modifier(s?) catch_type identifier ')' block
+catch_type: qualified_identifier(s /\|/)
+finally_clause: finally block
+
+resource_specification: '(' resource(s /;/) semi(?) ')'
+resource: variable_modifier(s?) reference_type variable_decl_id '=' expression 
+
+# SWITCH
+
+switch_block_statement_group: switch_label(s) block_statement(s?)
+switch_label: case expression ':' | case enum_constant_name ':' | default ':'
+enum_constant_name: identifier
+
+# FOR
+
+for_control: foreach_control | for_init ';' expression(?) ';' for_update(?)
+foreach_control: variable_modifier(s?) type variable_decl_id ':' expression
+for_init: expression(s? /,/) | variable_modifier(s?) type variable_decl(s /,/)
+for_update: expression(s? /,/)
+
+# EXPRESSIONS
+
+expression: expression1 expression_assignment(?)
+expression_assignment: assignment_operator expression1 
+assignment_operator: '=' | '+=' | '-= ' | '*=' | '/='
+                   | '&=' | '|=' | '^=' | '%=' | '<<=' | '>>=' | '>>>='
+
+# note: expression1 = conditional_expression
+expression1: expression2 | expression2 '?' expression ':' expression1
+expression2: <leftop: expression3 infix_op expression3> | expression3 instanceof type
+infix_op: '|| ' | '&&' | '|' | '^' | '&' | '==' | '!=' | '<' | '>' | '<=' | '>='
+        | '<<' | '>>' | '>>>' | '+' | '-' | '*' | '/' | '%'
+
+expression3: prefix_op expression3
+           | '(' cast ')' expression3
+           | primary selector(s?) postfix_op(s?)
+cast: expression | type
+prefix_op: '++' | '--' | '!' | '~' | '+' | '-'
+postfix_op: '++' | '--'
+
+# PRIMARIES
+
+primary: literal
+       | '(' expression ')'
+       | this arguments(?)
+       | super super_suffix
+       | new creator
+       | non_wildcard_type_arguments explicit_generic_invocation_suffix
+       | non_wildcard_type_arguments this arguments
+       | identifier(s /\./) identifier_suffix(?)
+       | basic_type array_suffix(s?) '.' class
+       | void '.' class
+
+arguments: '(' expression(s? /,/) ')'
+super_suffix: arguments | '.' identifier arguments(?)
+explicit_generic_invocation_suffix: super super_suffix | identifier arguments
+
+# LITERALS
+
+literal: integer_literal | floating_point_literal | char_literal
+       | string_literal | boolean_literal | null
+boolean_literal: true | false
+true: "true"
+false: "false"
+null: "null"
+
+integer_literal: decimal_literal | octal_literal | binary_literal | hex_literal
+decimal_literal: <skip:""> digits[0-9] /[lL]?/
+octal_literal: <skip:""> '0' digits[0-7] /[lL]?/
+binary_literal: <skip:""> "0b" digits[01] /[lL]?/
+hex_literal: <skip:""> "0x" digits[0-9a-fA-F] /[lL]?/
+digits: /$arg[0](?:_?$arg[0])*+/
+
+floating_point_literal: <skip:"">
+                        fp_digits '.' fp_digits(?) fp_exponent(?) /[fF]?/
+                      | fp_digits(?) '.' fp_digits fp_exponent(?) /[fF]?/
+                      | fp_digits fp_exponent(?) /[fF]?/
+fp_digits: digits[0-9]
+fp_exponent: <skip:""> /[eE][+-]/ fp_digits
+
+string_literal: /"(?:[^\\"]|\\[^u]|\\u[0-9a-fA-F]{4})++"/
+char_literal: /'(?:[^\\']|\\[^u]|\\u[0-9a-fA-F]{4})'/
+
+# CREATORS
+
+creator: non_wildcard_type_arguments created_name arguments class_body(?)
+       | created_name arguments class_body(?)
+       | created_name array_suffix(s) array_initializer
+       | created_name array_index(s) array_suffix(s?)
+
+created_name: created_name_component(s /\./)
+created_name_component: identifier type_arguments_or_diamond(?)
+
+# NOTE: I eliminated some things from here since selector(s?) always called after
+identifier_suffix: array_suffix(s?) '.' class
+                 | array_index
+                 | arguments
+                 | '.' class
+array_index: '[' expression ']'
+
+explicit_generic_invocation: non_wildcard_type_arguments
+                             explicit_generic_invocation_suffix
+inner_creator: identifier non_wildcard_type_arguments_or_diamond(?)
+               arguments class_body(?)
+
+selector: '.' identifier arguments(?)
+        | '.' explicit_generic_invocation
+        | '.' this
+        | '.' super super_suffix
+        | '.' new non_wildcard_type_arguments(?) inner_creator
+        | array_index
+
+# KEYWORDS
+
+abstract: "abstract"
+assert: "assert"
+boolean: "boolean"
+break: "break"
+byte: "byte"
+case: "case"
+catch: "catch"
+char: "char"
+class: "class"
+continue: "continue"
+default: "default"
+do: "do"
+double: "double"
+else: "else"
+enum: "enum"
+extends: "extends"
+final: "final"
+finally: "finally"
+float: "float"
+for: "for"
+if: "if"
+implements: "implements"
+import: "import"
+instanceof: "instanceof"
+interface: "interface"
+int: "int"
+long: "long"
+native: "native"
+new: "new"
+package: "package"
+private: "private"
+protected: "protected"
+public: "public"
+return: "return"
+short: "short"
+static: "static"
+strictfp: "strictfp"
+super: "super"
+switch: "switch"
+synchronized: "synchronized"
+this: "this"
+throws: "throws"
+throw: "throw"
+transient: "transient"
+try: "try"
+void: "void"
+volatile: "volatile"
+while: "while"
+
+keyword: abstract | assert | boolean | break | byte
+       | case | catch | char | class | continue
+       | default | do | double | else | enum | extends
+       | final | finally | float | for
+       | if | implements | import | instanceof | interface | int
+       | long | native | new | package | private | protected | public
+       | return | short | static | strictfp | super | switch | synchronized
+       | this | throws | throw | transient | try | void | volatile | while
+       | true | false | null        # Not actually keywords, just literals
+       | "goto" | "const"           # Unused
