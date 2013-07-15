@@ -4,39 +4,39 @@ use strict;
 use Parse::RecDescent;
 use Data::Dumper;
 
-# Wipes out comments and contents of strings,
-# which could get confusing...
-sub kill_comments {
-  local($_) = shift;
-  my $out = '';
-  while (s{^(.*?)("|/\*|//)}{}s) {
-    my $out .= $1;
-    my $c = '';
-    if ($2 eq '"') {
-      s/^((?:[^"\\]*+(?:\\.)*+)*+")//;
-      $out .= ('"' + (' 'x(length($1)-1)) + '"');
-    } elsif ($2 eq '/*') {
-      s{^(.*?\*/)}{}s;
-      $c = "/*$1";
-    } elsif ($2 eq '//') {
-      s/^([^\n]*)//;
-      $c = "//$1";
-    }
-    $c =~ s/[^\n]/ /;
-    $out .= $c;
-  }
-  $out .= $_;
-  return $out;
+package Java::Type {
 }
 
-sub name {
-  my @x = ();
-  foreach my $x (@{$_[0]->{'word(s)'}}) {
-    push @x, $x->{'__VALUE__'};
-  }  
-  push @x, $_[0]->{'word'}->{'__VALUE__'};
-  local($") = '.';
-  return "@x";
+package Java::PrimitiveType {
+  @ISA = ('Java::Type');
+  sub new {
+    my $type = shift;
+    my $self = {};
+    $self->{'type'} = shift;
+  }
+}
+
+package Java::ArrayType {
+  @ISA = ('Java::Type');
+
+  sub new {
+    my $type = shift;
+    my $self = {};
+    my $componen_typet = shift;
+    $self->{'component_type'} = $component;
+    $self->{'name'} = $component->{'name'} + '[]';
+    bless $self, $type;    
+  }
+}
+
+package Java::CompilationUnit {
+  sub imports { return $_[0]->{'imports'}; }
+  sub pkg { return $_[0]->{'package'}; }
+}
+
+package Java::TypeDecl {
+  
+
 }
 
 # Find all the known imports
@@ -51,8 +51,10 @@ sub name {
 # Slurp the file
 $/ = undef;
 $_ = <>;
+#$_ = "@ARGV";
 
 $::RD_TRACE = 0; $::RD_HINT = 1; $::RD_WARN = 1;
+# $::RD_AUTOSTUB = 1;
 
 # First kill the comments (replace with spaces)
 #$_ = kill_comments($_);
@@ -75,10 +77,6 @@ my $tree = $parser->compilation_unit(\$_);
 #my $tree = $parser->class_decl("{ void foo() {} }");
 
 $tree or print "Bad text!\n";
-
-
-#print Dumper($tree->{'import(s?)'}->[0]->{'fully_qualified_name'});
-#print name($tree->{'import(s?)'}->[0]->{'fully_qualified_name'});
 
 print Dumper($tree);
 
