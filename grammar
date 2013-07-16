@@ -1,37 +1,24 @@
+<autotree>
+
 # COMPILATION UNIT
 
 compilation_unit: package_decl(?) import_decl(s?) type_decl(s?)
-    { my @imports = (); foreach (@{$item[2]}) { push @imports, $_ };
-      my @items = grep { $_ } @{$item[3]};
-      $return = {'package' => $item[1], 'imports' => \@imports,
-                 'types' => \@items}; bless $return, "Java::CompilationUnit" }
 package_decl: annotation(s?) package qualified_identifier ';'
 import_decl: import static(?) qualified_identifier import_wildcard(?) ';'
-    { $return = {'name' => $item[3], 'static' => $#{$item[2]} + 1,
-                 'wildcard' => $#{$item[4]} + 1};
-      bless $return, "Java::ImportDecl" }
 import_wildcard: '.' '*'
 
 # IDENTIFIERS
 
 identifier: ...!keyword /[a-zA-Z_\$][a-zA-Z0-9_\$]*+/
-    { $return = $item[2] }
 qualified_identifier: identifier(s /\./)
-    { $return = join('.', @{$item[1]}) }
 qualified_identifier_list: qualified_identifier(s /,/)
-    { $return = $item[1] }
 
 # TYPE DECLARATIONS
 
-type_decl: class_decl | interface_decl | enum_decl | annotation_decl
-         | ';'  { $return = ''; }
+type_decl: class_decl | interface_decl | enum_decl | annotation_decl | ';' 
 class_decl: modifier(s?) class identifier type_parameters(?)
             extends_clause(?) implements_clause(?)
             class_body
-    { $return = $item[7];
-      $return{'name'} = $item[3]; $return{'modifiers'} = $item[1];
-      $return{'params'} = $item[4]; $return{'extends'} = $item[5];
-      $return{'implements'} = $item[6]; bless $return, "Java::TypeDecl" }
 extends_clause: extends type
 implements_clause: implements type_list
 
@@ -48,20 +35,9 @@ annotation_decl: modifier(s?)
 # TYPE REFS
 
 type: basic_type array_suffix(s?)
-          { $return = $item[1]; my $count = 1 + $#{$item[2]};
-            while ($count > 0) $return = Java::ArrayType->new($return); } 
     | reference_type array_suffix(s?)
-          { $return = $item[1]; my $count = 1 + $#{$item[2]};
-            while ($count > 0) $return = Java::ArrayType->new($return); } 
-basic_type: byte     { $return = Java::PrimitiveType->new("byte") }
-          | short    { $return = Java::PrimitiveType->new("short") }
-          | char     { $return = Java::PrimitiveType->new("char") }
-          | int      { $return = Java::PrimitiveType->new("int") }
-          | long     { $return = Java::PrimitiveType->new("long") }
-          | float    { $return = Java::PrimitiveType->new("float") }
-          | double   { $return = Java::PrimitiveType->new("double") }
-          | boolean  { $return = Java::PrimitiveType->new("boolean") }
-type_or_void: type | void  { $return = Java::PrimitiveType->new("void") }
+basic_type: byte | short | char | int | long | float | double | boolean
+type_or_void: type | void
 reference_type_component: identifier type_arguments(?)
 reference_type: reference_type_component(s /\./)
 array_suffix: '[' ']'
@@ -123,7 +99,7 @@ interface_method_decl: modifier(s?) type_parameters(?)
                        type_or_void identifier formal_parameters array_suffix(s?)
                        throws_clause(?) ';'
 
-constant_decl: identifier array_suffix(s?) '=' variable_initializer
+constant_decl: variable_decl '=' variable_initializer
 
 # ENUMS
 
@@ -148,10 +124,10 @@ formal_parameter_decls: formal_parameter_decl(s /,/)
                       | varargs_parameter_decl
                       | formal_parameter_decl(s /,/) ',' varargs_parameter_decl
 formal_parameter_decl: variable_modifier(s?) type variable_decl_id 
-varargs_parameter_decl: 
+varargs_parameter_decl: variable_modifier(s?) type '...' variable_decl_id
 variable_modifier: final | annotation
 variable_decl_id: identifier array_suffix(s?)
-variable_decl: identifier array_suffix(s?) variable_decl_assignment(?)
+variable_decl: variable_decl_id variable_decl_assignment(?)
 variable_decl_assignment: '=' variable_initializer
 variable_initializer: array_initializer | expression
 array_initializer: '{' variable_initializer(s /,/) comma(?) '}'

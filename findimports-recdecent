@@ -3,41 +3,44 @@
 use strict;
 use Parse::RecDescent;
 use Data::Dumper;
+use Scalar::Util qw(blessed reftype);
 
-package Java::Type {
-}
-
-package Java::PrimitiveType {
-  @ISA = ('Java::Type');
-  sub new {
-    my $type = shift;
-    my $self = {};
-    $self->{'type'} = shift;
+sub clean {
+  my $class = $_[1] || '';
+  my $tree = $_[0];
+  my $origpkg = blessed $tree;
+  my $type = reftype($tree) || '';
+  my $rule = $type eq 'HASH' ? $tree->{'__RULE__'} : '';
+  my $rv;
+  if ($type eq 'ARRAY') {
+    my @proto = map { ::clean($_, $class) } @$tree;
+    $rv = $class and $class->can($rule) ? $class->$rule(@proto) : \@proto;
+    $rv = \@proto;
+  } elsif ($type eq 'HASH') {
+    my %proto = map { consolidate_hash_($_, $tree->{$_}, $class) } keys %$tree;
+    if ($class and $class->can($rule)) {
+      $rv = $class->$rule(\%proto);
+    } else {
+      $rv = \%proto;
+    }
+  } else {
+    $rv = $tree;
   }
-}
-
-package Java::ArrayType {
-  @ISA = ('Java::Type');
-
-  sub new {
-    my $type = shift;
-    my $self = {};
-    my $componen_typet = shift;
-    $self->{'component_type'} = $component;
-    $self->{'name'} = $component->{'name'} + '[]';
-    bless $self, $type;    
-  }
-}
-
-package Java::CompilationUnit {
-  sub imports { return $_[0]->{'imports'}; }
-  sub pkg { return $_[0]->{'package'}; }
-}
-
-package Java::TypeDecl {
   
-
+  return $rv;
 }
+
+sub consolidate_hash_ {
+  my $key = $_[0];
+  my $val = $_[1];
+  my $class = $_[2];
+  if ($key =~ /(\w+)\(\?\)$/) {
+    return () unless @$val;
+    return $1, ::clean($val->[0], $class);
+  }
+  return ($key, ::clean($val, $class));
+}
+
 
 # Find all the known imports
 #my %imports = ();
@@ -53,7 +56,7 @@ $/ = undef;
 $_ = <>;
 #$_ = "@ARGV";
 
-$::RD_TRACE = 0; $::RD_HINT = 1; $::RD_WARN = 1;
+#$::RD_TRACE = 0; $::RD_HINT = 1; $::RD_WARN = 1;
 # $::RD_AUTOSTUB = 1;
 
 # First kill the comments (replace with spaces)
@@ -66,19 +69,137 @@ close GRAMMAR;
 
 my $parser = new Parse::RecDescent($grammar) or die "Bad grammar!\n";
 
-print STDERR "\nFOOOOOO\n\n";
-
 #print Dumper($parser);
 
 #my $tree = $parser->parameter_list("Provider<? extends DataSource> dataSource, Foo bar");
 
 #my $tree = $parser->class_decl("class EvaluatorImpl { }");
 my $tree = $parser->compilation_unit(\$_);
+
+package Java::Identifiers {
+  sub identifier {
+    return $_[1]->{'__PATTERN1__'};
+  }
+  sub qualified_identifier {
+    return join '.', @{$_[1]->{'identifier(s)'}};
+  }
+  sub package_decl {
+    $_[0]->{'package'} = $_[1]->{'qualified_identifier'};
+    return {};
+  }
+  sub import_decl {
+    my $import = {'name' => $_[1]->{'qualified_identifier'}};
+    $import->{'static'} = !!$_[1]->{'static'};
+    $import->{'wildcard'} = !!$_[1]->{'import_wildcard'};
+    push @{$_[0]->{'imports'}}, $import;
+    $import->{'name'} =~ /\.([^.]*)$/;
+    my $unqualified = $1;
+    if ($import->{'static'}) {
+      $_[0]->{'imported primaries'}->{$unqualified} = 1;  
+      $_[0]->{'imported methods'}->{$unqualified} = 1;  
+    } else {
+      $_[0]->{'imported types'}->{$unqualified} = 1;  
+    }
+    # What to do with wildcards?
+    return {};
+  }
+  sub reference_type_component {
+    return $_[1]->{'identifier'};
+  }
+  sub reference_type {
+    my $type = join '.', @{$_[1]->{'reference_type_component(s)'}};
+    $_[0]->{'types'}->{$type} = 1;
+    return $_[1];
+  }
+  sub created_name_component {
+    return $_[1]->{'identifier'};
+  }
+  sub created_name {
+    my $type = join '.', @{$_[1]->{'created_name_component(s)'}};
+    $_[0]->{'types'}->{$type} = 1;
+    return $_[1];
+  }
+  sub annotation {
+    $_[0]->{'types'}->{$_[1]->{'qualified_identifier'}} = 1;
+    return $_[1];
+  }
+  sub type_parameter {
+    $_[0]->{'imported types'}->{$_[1]->{'identifier'}} = 1;
+    return $_[1];
+  }
+  sub variable_decl_id {
+    $_[0]->{'imported primaries'}->{$_[1]->{'identifier'}} = 1;
+    return $_[1];
+  }
+  sub class_decl {
+    # TODO(sdh): import the type, also for enums, etc.
+    return $_[1];
+  }
+  sub method_decl {
+    $_[0]->{'imported methods'}->{$_[1]->{'identifier'}} = 1;
+    return $_[1];
+  }
+  sub interface_method_decl {
+    $_[0]->{'imported methods'}->{$_[1]->{'identifier'}} = 1;
+    return $_[1];
+  }
+  sub primary {
+    my $egis = $_[1]->{'explicit_generic_invocation_suffix'};
+    my $ident = $_[1]->{'identifier'};
+    print "IDENT: $ident\n" if $ident;
+    my $is = $_[1]->{'identifier_suffix'};
+    if ($egis && $egis->{'identifier'}) {
+      $_[0]->{'methods'}->{$egis->{'identifier'}} = 1;
+    } elsif ($ident) {
+      if (not $is or $is->{'array_index'}) {
+        $_[0]->{'primaries'}->{$ident} = 1;
+      } elsif ($is->{'class'}) {
+        $_[0]->{'types'}->{$ident} = 1;
+      } elsif ($is->{'arguments'}) {
+        $_[0]->{'methods'}->{$ident} = 1;
+      }
+    }
+    return $_[1];
+  }
+
+  sub new {
+    return bless {}, $_[0];
+  }
+  sub imports {
+    return @{$_[0]->{'imports'}};
+  }
+  sub types {
+    return sort keys %{$_[0]->{'types'}};
+  }
+  sub methods {
+    return sort keys %{$_[0]->{'methods'}};
+  }
+  sub primaries {
+    return sort keys %{$_[0]->{'primaries'}};
+  }
+  sub unimported {
+    foreach my $t ('types', 'methods', 'primaries') {
+      my @unimported = grep { not $_[0]->{"imported $t"}->{$_} } keys %{$_[0]->{$t}};
+      print "UNIMPORTED $t: @unimported\n";
+    }
+  }
+}
+
+my $id = Java::Identifiers->new;
+$tree = ::clean $tree, $id;
 #my $tree = $parser->class_decl("{ void foo() {} }");
 
 $tree or print "Bad text!\n";
+print STDERR "\nFOOOOOO\n\n";
 
-print Dumper($tree);
+#print Dumper($tree);
+my @imports = map { $_->{'static'} ? $_->{'name'} : '' } $id->imports;
+print "IMPORTS: @imports\n";
+
+my @types = $id->types;
+print "TYPES: @types\n";
+
+$id->unimported;
 
 print "UNPARSED: $_\n";
 
