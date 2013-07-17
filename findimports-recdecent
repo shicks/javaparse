@@ -5,42 +5,55 @@ use Parse::RecDescent;
 use Data::Dumper;
 use Scalar::Util qw(blessed reftype);
 
-sub clean {
-  my $class = $_[1] || '';
-  my $tree = $_[0];
-  my $origpkg = blessed $tree;
-  my $type = reftype($tree) || '';
-  my $rule = $type eq 'HASH' ? $tree->{'__RULE__'} : '';
-  my $rv;
-  if ($type eq 'ARRAY') {
-    my @proto = map { ::clean($_, $class) } @$tree;
-    $rv = $class and $class->can($rule) ? $class->$rule(@proto) : \@proto;
-    $rv = \@proto;
-  } elsif ($type eq 'HASH') {
-    my %proto = map { consolidate_hash_($_, $tree->{$_}, $class) } keys %$tree;
-    if ($class and $class->can($rule)) {
-      $rv = $class->$rule(\%proto);
-    } else {
-      $rv = \%proto;
+package Parse::RecDescent::Walker {
+
+  # Usage: Parse::RecDescent::Walker->walk($tree, [$object]);
+  sub walk {
+    my $walker = bless {'target' => $_[2], 'seen' => {}}, $_[0];
+    return $walker->walk_($_[1], '\$tree');
+  }
+
+  sub walk_ {
+    my ($self, $tree, $prefix) = @_;
+    my $format = $self->format_refaddr_($tree);
+    return $self->{'seen'}->{$format} if exists $self->{'seen'}->{$format};
+    my $type = ::reftype($tree) || '';
+    my $rule = $type eq 'HASH' ? $tree->{'__RULE__'} : '';
+    my $rv = $tree;
+    if ($type eq 'ARRAY') {
+      my $i = 0;
+      my @proto = map { $self->walk_($_, "$prefix\[$i++\]") } @$tree;
+      $rv = $self->wrap_($rule, \@proto);
+    } elsif ($type eq 'HASH') {
+      my %proto = map { $self->consolidate_($_, $tree->{$_}, $prefix) } keys %$tree;
+      $rv = $self->wrap_($rule, \%proto);
     }
-  } else {
-    $rv = $tree;
+    $self->{'seen'}->{$format} = $rv;
+    return $rv;
   }
-  
-  return $rv;
+
+  sub wrap_ {
+    my ($self, $rule, $ref) = @_;
+    my $target = $self->{'target'};
+    return ($target and $target->can($rule)) ? $target->$rule($ref) : $ref;
+  }
+
+  sub format_refaddr_ {
+    require Scalar::Util;
+    pack "J", Scalar::Util::refaddr($_[1]);
+  }
+
+  sub consolidate_ {
+    my ($self, $key, $val, $prefix) = @_;
+    if ($key =~ /(\w+)\(\?\)$/) {
+      return () unless @$val;
+      return $1, $self->walk_($val->[0], "$prefix\{$key\}");
+    }
+    return ($key, $self->walk_($val, "$prefix\{$key\}"));
+  }
 }
 
-sub consolidate_hash_ {
-  my $key = $_[0];
-  my $val = $_[1];
-  my $class = $_[2];
-  if ($key =~ /(\w+)\(\?\)$/) {
-    return () unless @$val;
-    return $1, ::clean($val->[0], $class);
-  }
-  return ($key, ::clean($val, $class));
-}
-
+# (Still need to figure out where the intercalated expression_assignment is coming from)
 
 # Find all the known imports
 #my %imports = ();
@@ -147,6 +160,7 @@ package Java::Identifiers {
     my $egis = $_[1]->{'explicit_generic_invocation_suffix'};
     my $ident = $_[1]->{'identifier'};
     print "IDENT: $ident\n" if $ident;
+    # print ::Dumper($_[1]);
     my $is = $_[1]->{'identifier_suffix'};
     if ($egis && $egis->{'identifier'}) {
       $_[0]->{'methods'}->{$egis->{'identifier'}} = 1;
@@ -185,14 +199,20 @@ package Java::Identifiers {
   }
 }
 
+
+
+#$tree = ::clean $tree;
+#print Dumper($tree);
+#exit 0;
+
 my $id = Java::Identifiers->new;
-$tree = ::clean $tree, $id;
+$tree = Parse::RecDescent::Walker->walk($tree, $id);
 #my $tree = $parser->class_decl("{ void foo() {} }");
 
 $tree or print "Bad text!\n";
 print STDERR "\nFOOOOOO\n\n";
 
-#print Dumper($tree);
+print Dumper($tree);
 my @imports = map { $_->{'static'} ? $_->{'name'} : '' } $id->imports;
 print "IMPORTS: @imports\n";
 

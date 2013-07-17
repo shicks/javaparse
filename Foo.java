@@ -33,7 +33,7 @@ public class Foo<T extends Foo<T>> extends Bar<List<T>> implements Baz, Qux<T> {
       @Override public void run() {}
     };
     public void run() {
-        execute();  // TODO(sdh): FOR SOME REASON, passing an argument makes us think execute is a primary rather than a method...?
+        execute(x);  // TODO(sdh): FOR SOME REASON, passing an argument makes us think execute is a primary rather than a method...?
     }
     JKL() {
       public final Thingy next = ABC;
