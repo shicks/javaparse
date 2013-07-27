@@ -1,0 +1,51 @@
+#!/usr/bin/perl
+
+use strict;
+use Parse::RecDescent;
+use Parse::RecDescent::Walker;
+use Data::Dumper;
+
+# Slurp the file
+$/ = undef;
+$_ = <>;
+
+#$::RD_TRACE = 0; $::RD_HINT = 1; $::RD_WARN = 1;
+# $::RD_AUTOSTUB = 1;
+
+$Parse::RecDescent::skip = qr{ (?: \s+ | /\* (?: (?! \*/ ) . )*+ \*/ | // [^\n]*+\n )* }xs;
+open GRAMMAR, "grammar";
+my $grammar = <GRAMMAR>;
+close GRAMMAR;
+
+my $parser = new Parse::RecDescent($grammar) or die "Bad grammar!\n";
+
+#print Dumper($parser);
+
+#my $tree = $parser->parameter_list("Provider<? extends DataSource> dataSource, Foo bar");
+
+#my $tree = $parser->class_decl("class EvaluatorImpl { }");
+my $tree = $parser->compilation_unit(\$_);
+
+#$tree = ::clean $tree;
+#print Dumper($tree); exit 0;
+
+my $id = Java::Identifiers->new;
+$tree = Parse::RecDescent::Walker->walk($tree, $id);
+#my $tree = $parser->class_decl("{ void foo() {} }");
+
+$tree or print "Bad text!\n";
+print STDERR "\nFOOOOOO\n\n";
+
+print Dumper($tree);
+my @imports = map { $_->{'static'} ? $_->{'name'} : '' } $id->imports;
+print "IMPORTS: @imports\n";
+
+my @types = $id->types;
+print "TYPES: @types\n";
+
+$id->unimported;
+
+print "UNPARSED: $_\n";
+
+my @words = sort keys %::words;
+print "@words\n";

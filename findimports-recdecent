@@ -15,20 +15,32 @@ package Parse::RecDescent::Walker {
 
   sub walk_ {
     my ($self, $tree, $prefix) = @_;
+    #print "WALK_ $prefix, tree=", ::Dumper($tree), "\n"
+    #  if $prefix =~ /primary\}$/ and $prefix !~ /primary.*primary/;
     my $format = $self->format_refaddr_($tree);
+    #print "WALK_:\n", ::Dumper({format => $format, self => $self, prefix => $prefix}), "\n";
     return $self->{'seen'}->{$format} if exists $self->{'seen'}->{$format};
+    #print "DESCENDING\n";
     my $type = ::reftype($tree) || '';
     my $rule = $type eq 'HASH' ? $tree->{'__RULE__'} : '';
     my $rv = $tree;
     if ($type eq 'ARRAY') {
+      #print "ARRAY\n";
       my $i = 0;
-      my @proto = map { $self->walk_($_, "$prefix\[$i++\]") } @$tree;
+      my @proto = map {
+        my $newprefix = "$prefix\[$i\]"; $i++; $self->walk_($_, $newprefix);
+      } @$tree;
       $rv = $self->wrap_($rule, \@proto);
+      $self->{'seen'}->{$format} = $rv;
     } elsif ($type eq 'HASH') {
+      #print "HASH\n";
       my %proto = map { $self->consolidate_($_, $tree->{$_}, $prefix) } keys %$tree;
       $rv = $self->wrap_($rule, \%proto);
+      $self->{'seen'}->{$format} = $rv;
+      #print "WALK_ $prefix, result=", ::Dumper($rv), "\n"
+      #  if $prefix =~ /primary\}$/ and $prefix !~ /primary.*primary/;
     }
-    $self->{'seen'}->{$format} = $rv;
+    #print "RESULT: $prefix => ", ::Dumper($rv), "\n";
     return $rv;
   }
 
@@ -40,15 +52,23 @@ package Parse::RecDescent::Walker {
 
   sub format_refaddr_ {
     require Scalar::Util;
+    #print "FORMAT: ", Scalar::Util::refaddr($_[1]), "\n";
     pack "J", Scalar::Util::refaddr($_[1]);
   }
 
   sub consolidate_ {
     my ($self, $key, $val, $prefix) = @_;
+
+    #print "CONSOLIDATE_ $key ", ::Dumper($val), "\n"
+    #  if $prefix =~ /primary\}$/ and $prefix !~ /primary.*primary/;
+
+    #return () if $key =~ /DIRECTIVE/;
     if ($key =~ /(\w+)\(\?\)$/) {
+      my $rule = $1;
       return () unless @$val;
-      return $1, $self->walk_($val->[0], "$prefix\{$key\}");
+      return $rule, $self->walk_($val->[0], "$prefix\{$key\}");
     }
+
     return ($key, $self->walk_($val, "$prefix\{$key\}"));
   }
 }
@@ -91,6 +111,7 @@ my $tree = $parser->compilation_unit(\$_);
 
 package Java::Identifiers {
   sub identifier {
+    #print "IDENTIFIER:\n", ::Dumper(\@_), "\n"; exit 0;
     return $_[1]->{'__PATTERN1__'};
   }
   sub qualified_identifier {
@@ -101,6 +122,7 @@ package Java::Identifiers {
     return {};
   }
   sub import_decl {
+    #print "IMPORT DECL:\n", ::Dumper(\@_), "\n"; exit 0;
     my $import = {'name' => $_[1]->{'qualified_identifier'}};
     $import->{'static'} = !!$_[1]->{'static'};
     $import->{'wildcard'} = !!$_[1]->{'import_wildcard'};
@@ -117,9 +139,11 @@ package Java::Identifiers {
     return {};
   }
   sub reference_type_component {
+    #print "REFERENCE TYPE COMPONENT:\n", ::Dumper(\@_), "\n"; exit 0;
     return $_[1]->{'identifier'};
   }
   sub reference_type {
+    #print "REFERENCE TYPE:\n", ::Dumper(\@_), "\n"; exit 0;
     my $type = join '.', @{$_[1]->{'reference_type_component(s)'}};
     $_[0]->{'types'}->{$type} = 1;
     return $_[1];
@@ -137,6 +161,7 @@ package Java::Identifiers {
     return $_[1];
   }
   sub type_parameter {
+    #print "TYPE PARAMETER:\n", ::Dumper(\@_), "\n"; exit 0;
     $_[0]->{'imported types'}->{$_[1]->{'identifier'}} = 1;
     return $_[1];
   }
@@ -145,7 +170,23 @@ package Java::Identifiers {
     return $_[1];
   }
   sub class_decl {
-    # TODO(sdh): import the type, also for enums, etc.
+    $_[0]->{'imported types'}->{$_[1]->{'identifier'}} = 1;
+    $_[0]->{'imported primaries'}->{$_[1]->{'identifier'}} = 1;
+    return $_[1];
+  }
+  sub enum_decl {
+    $_[0]->{'imported types'}->{$_[1]->{'identifier'}} = 1;
+    $_[0]->{'imported primaries'}->{$_[1]->{'identifier'}} = 1;
+    return $_[1];
+  }
+  sub interface_decl {
+    $_[0]->{'imported types'}->{$_[1]->{'identifier'}} = 1;
+    $_[0]->{'imported primaries'}->{$_[1]->{'identifier'}} = 1;
+    return $_[1];
+  }
+  sub annotation_decl {
+    $_[0]->{'imported types'}->{$_[1]->{'identifier'}} = 1;
+    $_[0]->{'imported primaries'}->{$_[1]->{'identifier'}} = 1;
     return $_[1];
   }
   sub method_decl {
@@ -158,26 +199,41 @@ package Java::Identifiers {
   }
   sub primary {
     my $egis = $_[1]->{'explicit_generic_invocation_suffix'};
-    my $ident = $_[1]->{'identifier'};
-    print "IDENT: $ident\n" if $ident;
+    my $ident = $_[1]->{'identifier(s)'};
+    # print "IDENT: $ident\n" if $ident;
     # print ::Dumper($_[1]);
     my $is = $_[1]->{'identifier_suffix'};
     if ($egis && $egis->{'identifier'}) {
       $_[0]->{'methods'}->{$egis->{'identifier'}} = 1;
     } elsif ($ident) {
       if (not $is or $is->{'array_index'}) {
-        $_[0]->{'primaries'}->{$ident} = 1;
+        $_[0]->{'primaries'}->{$ident->[0]} = 1;
       } elsif ($is->{'class'}) {
-        $_[0]->{'types'}->{$ident} = 1;
+        $_[0]->{'types'}->{$ident->[0]} = 1;
       } elsif ($is->{'arguments'}) {
-        $_[0]->{'methods'}->{$ident} = 1;
+        # ACK! can't tell if the base is a primary or a type... we could
+        # keep better track of whether things are imported static or not.
+        my @ident = @$ident;
+        if (@ident > 1) {
+          $_[0]->{'types'}->{$ident[0]} = 1;
+          $_[0]->{'primaries'}->{$ident[0]} = 1;
+        }
+        $_[0]->{'methods'}->{$ident[$#ident]} = 1;
       }
     }
     return $_[1];
   }
 
   sub new {
-    return bless {}, $_[0];
+    return bless {
+                  'imports' => [],
+                  'types' => {},
+                  'methods' => {},
+                  'primaries' => {},
+                  'imported types' => {},
+                  'imported methods' => {},
+                  'imported primaries' => {},
+                 }, $_[0];
   }
   sub imports {
     return @{$_[0]->{'imports'}};
@@ -202,8 +258,7 @@ package Java::Identifiers {
 
 
 #$tree = ::clean $tree;
-#print Dumper($tree);
-#exit 0;
+#print Dumper($tree); exit 0;
 
 my $id = Java::Identifiers->new;
 $tree = Parse::RecDescent::Walker->walk($tree, $id);
