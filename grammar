@@ -1,4 +1,11 @@
-<autotree>
+<autoaction:
+  $item{'__POS__'} = $thisoffset;
+  # NOTE: addition of these lines makes this much slower
+  # We might want to consider automatically removing them when not needed.
+  # $item{'__START__'} = $ NOSPACE itempos[1]{offset}{from};
+  # $item{'__END__'} = $ NOSPACE itempos[$#itempos]{offset}{to};
+  bless \%item, $item[0];
+>
 
 # COMPILATION UNIT
 

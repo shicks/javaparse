@@ -3,6 +3,7 @@
 use strict;
 use Parse::RecDescent;
 use Parse::RecDescent::Walker;
+use Java::Tree;
 use Data::Dumper;
 
 # Slurp the file
@@ -18,34 +19,12 @@ my $grammar = <GRAMMAR>;
 close GRAMMAR;
 
 my $parser = new Parse::RecDescent($grammar) or die "Bad grammar!\n";
-
-#print Dumper($parser);
-
-#my $tree = $parser->parameter_list("Provider<? extends DataSource> dataSource, Foo bar");
-
-#my $tree = $parser->class_decl("class EvaluatorImpl { }");
 my $tree = $parser->compilation_unit(\$_);
+if ($_ =~ /\S/ or not $tree) {
+  print "UNPARSED: [$_]\n";
+  exit 1;
+}
 
-#$tree = ::clean $tree;
-#print Dumper($tree); exit 0;
+my $cu = Parse::RecDescent::Walker->walk($tree, 'Java::Tree');
 
-my $id = Java::Identifiers->new;
-$tree = Parse::RecDescent::Walker->walk($tree, $id);
-#my $tree = $parser->class_decl("{ void foo() {} }");
-
-$tree or print "Bad text!\n";
-print STDERR "\nFOOOOOO\n\n";
-
-print Dumper($tree);
-my @imports = map { $_->{'static'} ? $_->{'name'} : '' } $id->imports;
-print "IMPORTS: @imports\n";
-
-my @types = $id->types;
-print "TYPES: @types\n";
-
-$id->unimported;
-
-print "UNPARSED: $_\n";
-
-my @words = sort keys %::words;
-print "@words\n";
+print Dumper($cu);
